@@ -433,8 +433,8 @@ with tab4:
     🚀 Top Performer: **{top_campaign['campaign']}** (ROAS {top_campaign['ROAS']:.2f})
     """)
 
-# --------------------------------------------------
-# TAB 5 — BUDGET ENGINE (FIXED + CLEAN)
+## --------------------------------------------------
+# TAB 5 — BUDGET ENGINE (FINAL CLEAN)
 # --------------------------------------------------
 with tab5:
 
@@ -454,17 +454,13 @@ with tab5:
     df_budget = product_perf.copy()
 
     # -----------------------------------
-    # FIX DATA SCALE (IMPORTANT)
+    # FORCE CORRECT SCALE (NO MORE R1/R2)
     # -----------------------------------
-    # If spend looks like R1, R2 → scale it up
-    if df_budget["Spend"].max() < 100:
-        df_budget["Spend"] = df_budget["Spend"] * 1000
-
-    if df_budget["Revenue"].max() < 100:
-        df_budget["Revenue"] = df_budget["Revenue"] * 1000
+    df_budget["Spend"] = df_budget["Spend"] * 1000
+    df_budget["Revenue"] = df_budget["Revenue"] * 1000
 
     # -----------------------------------
-    # SAFE ROAS (NO INSANE VALUES)
+    # SAFE ROAS (REALISTIC)
     # -----------------------------------
     df_budget["ROAS"] = df_budget.apply(
         lambda row: row["Revenue"] / row["Spend"]
@@ -472,7 +468,7 @@ with tab5:
         axis=1
     )
 
-    # Cap unrealistic ROAS (protect UI)
+    # Cap unrealistic ROAS
     df_budget["ROAS"] = df_budget["ROAS"].clip(upper=10)
 
     # -----------------------------------
@@ -491,7 +487,7 @@ with tab5:
     # -----------------------------------
     # CLEAN ROUNDING
     # -----------------------------------
-    df_budget["ROAS"] = df_budget["ROAS"].round(2)
+    df_budget["ROAS"] = df_budget["ROAS"].round(1)
 
     if "Conversions" in df_budget.columns:
         df_budget["Conversions"] = df_budget["Conversions"].fillna(0).astype(int)
@@ -502,13 +498,13 @@ with tab5:
     df_budget = df_budget.sort_values(by="ROAS", ascending=False)
 
     # -----------------------------------
-    # DISPLAY FORMAT (PROPER)
+    # DISPLAY FORMAT (GBP, NO DECIMALS)
     # -----------------------------------
     display_df = df_budget.copy()
 
-    display_df["Spend"] = display_df["Spend"].map(lambda x: f"R{x:,.0f}")
-    display_df["Revenue"] = display_df["Revenue"].map(lambda x: f"R{x:,.0f}")
-    display_df["ROAS"] = display_df["ROAS"].map(lambda x: f"{x:.2f}")
+    display_df["Spend"] = display_df["Spend"].map(lambda x: f"£{int(x):,}")
+    display_df["Revenue"] = display_df["Revenue"].map(lambda x: f"£{int(x):,}")
+    display_df["ROAS"] = display_df["ROAS"].map(lambda x: f"{x:.1f}")
 
     display_df = display_df.rename(columns={
         "product_title": "Product"
@@ -518,7 +514,7 @@ with tab5:
 
     st.dataframe(
         display_df,
-        width="stretch",  # ✅ fixed deprecation
+        width="stretch",
         hide_index=True
     )
 
@@ -534,7 +530,6 @@ with tab5:
 
     👉 Shift budget from low performers → top performers to increase revenue without increasing spend.
     """)
-
 # --------------------------------------------------
 # TAB 6 — MERIDIAN ANALYSIS
 # --------------------------------------------------
