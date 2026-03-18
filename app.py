@@ -433,103 +433,135 @@ with tab4:
     🚀 Top Performer: **{top_campaign['campaign']}** (ROAS {top_campaign['ROAS']:.2f})
     """)
 
-## --------------------------------------------------
-# TAB 5 — BUDGET ENGINE (FINAL CLEAN)
+
+# --------------------------------------------------
+# TAB 5 — BUDGET ENGINE (CONVERSION-DRIVEN)
 # --------------------------------------------------
 with tab5:
 
-    st.markdown("## 💡 Budget Recommendation Engine")
+    st.markdown("## 💡 Budget Recommendations")
 
     st.markdown("""
-    Automatically identifies where to scale, maintain, or cut spend.
+    Budget decisions based on **real volume + business impact**.
 
-    🟢 Scale → High efficiency  
-    🟡 Maintain → Stable  
-    🔴 Pause → Wasted spend  
+    🟢 Scale → strong sales & meaningful spend  
+    🟡 Hold → average  
+    🔴 Cut → low impact  
     """)
 
     # -----------------------------------
-    # COPY DATA
+    # AGGREGATION
     # -----------------------------------
-    df_budget = product_perf.copy()
-
-    # -----------------------------------
-    # FORCE CORRECT SCALE (NO MORE R1/R2)
-    # -----------------------------------
-    df_budget["Spend"] = df_budget["Spend"] * 1000
-    df_budget["Revenue"] = df_budget["Revenue"] * 1000
-
-    # -----------------------------------
-    # SAFE ROAS (REALISTIC)
-    # -----------------------------------
-    df_budget["ROAS"] = df_budget.apply(
-        lambda row: row["Revenue"] / row["Spend"]
-        if row["Spend"] > 0 else 0,
-        axis=1
+    df_budget = (
+        product_perf
+        .groupby("product_title", as_index=False)
+        .agg({
+            "Spend": "sum",
+            "Revenue": "sum",
+            "Conversions": "sum"
+        })
     )
 
-    # Cap unrealistic ROAS
-    df_budget["ROAS"] = df_budget["ROAS"].clip(upper=10)
+    # -----------------------------------
+    # CLEAN TYPES
+    # -----------------------------------
+    df_budget["Conversions"] = df_budget["Conversions"].astype(float)
 
     # -----------------------------------
-    # RECOMMENDATION LOGIC
+    # ACCOUNT BASELINES
+    # -----------------------------------
+    avg_conv = df_budget["Conversions"].mean()
+    avg_spend = df_budget["Spend"].mean()
+
+    # -----------------------------------
+    # DECISION LOGIC (REALISTIC)
     # -----------------------------------
     def rec(row):
-        if row["ROAS"] >= 3:
+        if row["Conversions"] > avg_conv * 1.3 and row["Spend"] > avg_spend:
             return "🟢 Scale"
-        elif row["ROAS"] < 1:
-            return "🔴 Pause"
+        elif row["Conversions"] < avg_conv * 0.7:
+            return "🔴 Cut"
         else:
-            return "🟡 Maintain"
+            return "🟡 Hold"
 
     df_budget["Action"] = df_budget.apply(rec, axis=1)
 
     # -----------------------------------
-    # CLEAN ROUNDING
+    # CONFIDENCE (DATA QUALITY)
     # -----------------------------------
-    df_budget["ROAS"] = df_budget["ROAS"].round(1)
+    def confidence(row):
+        if row["Conversions"] > 20:
+            return "High"
+        elif row["Conversions"] > 5:
+            return "Medium"
+        else:
+            return "Low"
 
-    if "Conversions" in df_budget.columns:
-        df_budget["Conversions"] = df_budget["Conversions"].fillna(0).astype(int)
+    df_budget["Confidence"] = df_budget.apply(confidence, axis=1)
 
     # -----------------------------------
-    # SORT
+    # SORT BY BUSINESS IMPACT
     # -----------------------------------
-    df_budget = df_budget.sort_values(by="ROAS", ascending=False)
+    df_budget = df_budget.sort_values(by="Revenue", ascending=False)
 
     # -----------------------------------
-    # DISPLAY FORMAT (GBP, NO DECIMALS)
+    # DISPLAY
     # -----------------------------------
     display_df = df_budget.copy()
 
     display_df["Spend"] = display_df["Spend"].map(lambda x: f"£{int(x):,}")
     display_df["Revenue"] = display_df["Revenue"].map(lambda x: f"£{int(x):,}")
-    display_df["ROAS"] = display_df["ROAS"].map(lambda x: f"{x:.1f}")
+    display_df["Conversions"] = display_df["Conversions"].map(lambda x: f"{int(x)}")
 
     display_df = display_df.rename(columns={
         "product_title": "Product"
     })
 
-    st.markdown("### 📋 Budget Breakdown")
+    # -----------------------------------
+    # GUIDE
+    # -----------------------------------
+    with st.expander("🧠 How this works"):
+        st.markdown("""
+        We prioritise **real sales volume**, not inflated efficiency.
+
+        - High conversions = reliable demand  
+        - Spend ensures results are scalable  
+        - Revenue shows business impact  
+
+        👉 High ROAS with low spend is ignored (not scalable).
+        """)
+
+    # -----------------------------------
+    # TABLE
+    # -----------------------------------
+    st.markdown("### 📊 Where Budget Should Go")
 
     st.dataframe(
-        display_df,
-        width="stretch",
+        display_df[[
+            "Product",
+            "Spend",
+            "Revenue",
+            "Conversions",
+            "Confidence",
+            "Action"
+        ]],
+        use_container_width=True,
         hide_index=True
     )
 
     # -----------------------------------
     # SUMMARY
     # -----------------------------------
-    scale_count = (df_budget["Action"].str.contains("Scale")).sum()
-    pause_count = (df_budget["Action"].str.contains("Pause")).sum()
+    scale = (df_budget["Action"] == "🟢 Scale").sum()
+    cut = (df_budget["Action"] == "🔴 Cut").sum()
 
     st.success(f"""
-    🚀 {scale_count} products to SCALE  
-    ⚠️ {pause_count} products to PAUSE  
+    🚀 {scale} products to SCALE  
+    🔻 {cut} products to CUT  
 
-    👉 Shift budget from low performers → top performers to increase revenue without increasing spend.
+    👉 Back products with real volume, not inflated ROAS.
     """)
+
 # --------------------------------------------------
 # TAB 6 — MERIDIAN ANALYSIS
 # --------------------------------------------------
