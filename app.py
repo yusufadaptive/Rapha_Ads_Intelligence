@@ -592,33 +592,25 @@ with tab6:
         st.plotly_chart(fig, use_container_width=True)
 
         st.info("Tip: The steeper curve indicates better scaling potential before diminishing returns kick in.")
+
 # --------------------------------------------------
-# TAB 7 — MERIDIAN SIMULATOR
+# TAB 7 — MERIDIAN SIMULATOR (UPGRADED)
 # --------------------------------------------------
 with tab7:
 
-    st.markdown("##  Spend Simulator (What Happens If You Scale?)")
+    st.markdown("## 🚀 Spend Simulator (What Happens If You Scale?)")
 
     st.markdown("""
-    This tool lets you simulate increasing budget for a campaign and see the **expected revenue impact**.
+    This tool simulates increasing budget and estimates **revenue impact using diminishing returns**.
 
-    ###  What this does:
-    - Uses a diminishing returns model  
-    - Predicts how revenue changes as spend increases  
-
-    ###  How to use:
-    1. Select a campaign  
-    2. Adjust the **Increase Spend %** slider  
-    3. Watch how revenue responds  
-
-    ###  Key idea:
-    - More spend ≠ proportional revenue  
-    - The higher you scale, the less efficient each extra unit becomes  
+    ### 🧠 Key Insight:
+    Scaling is highly dependent on data source .  
+    At higher spend levels, each extra rand works *harder* for less return.
     """)
 
     campaign = st.selectbox("Select Campaign", filtered["campaign"].unique())
 
-    data = filtered[filtered["campaign"]==campaign]
+    data = filtered[filtered["campaign"] == campaign]
 
     spend = data["cost"].sum()
     revenue = data["conv_value"].sum()
@@ -631,45 +623,109 @@ with tab7:
 
         pct = st.slider("Increase Spend (%)", 0, 100, 20)
 
-        new_spend = spend*(1+pct/100)
+        new_spend = spend * (1 + pct / 100)
 
+        # -------------------------------
+        # DIMINISHING RETURNS CURVE
+        # -------------------------------
         def curve(x):
-            return revenue*(1-np.exp(-x/spend))
+            return revenue * (1 - np.exp(-x / spend))
 
         current = curve(spend)
         new = curve(new_spend)
 
-        x = np.linspace(0,spend*2,100)
+        x = np.linspace(0, spend * 2.2, 200)  # smoother curve
         y = curve(x)
 
-        fig = px.line(x=x,y=y)
+        # -------------------------------
+        # PLOT
+        # -------------------------------
+        fig = px.line(
+            x=x,
+            y=y,
+            labels={"x": "Spend", "y": "Predicted Revenue"},
+        )
 
+        # Curve styling
+        fig.update_traces(
+            line=dict(width=4),
+        )
+
+        # CURRENT POINT (bigger + styled)
         fig.add_scatter(
             x=[spend],
             y=[current],
-            mode="markers",
-            name="Current Spend"
+            mode="markers+text",
+            name="Current",
+            text=["Current"],
+            textposition="top center",
+            marker=dict(
+                size=16,
+                symbol="circle",
+                line=dict(width=2)
+            ),
         )
 
+        # NEW POINT (bigger + highlighted)
         fig.add_scatter(
             x=[new_spend],
             y=[new],
-            mode="markers",
-            name="New Spend Scenario"
+            mode="markers+text",
+            name="Scenario",
+            text=["New"],
+            textposition="top center",
+            marker=dict(
+                size=20,
+                symbol="circle",
+                line=dict(width=2)
+            ),
         )
+
+        # -------------------------------
+        # BEAUTIFICATION
+        # -------------------------------
+        fig.update_layout(
+            height=500,
+            margin=dict(l=10, r=10, t=40, b=10),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+        )
+
+        # Optional subtle grid polish
+        fig.update_xaxes(showgrid=True, gridwidth=0.5)
+        fig.update_yaxes(showgrid=True, gridwidth=0.5)
 
         st.plotly_chart(fig, use_container_width=True)
 
+        # -------------------------------
+        # IMPACT SUMMARY
+        # -------------------------------
         st.markdown("### 📊 Impact Summary")
 
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
+
         c1.metric("Current Spend", f"{currency_symbol}{spend:,.0f}")
         c2.metric("New Spend", f"{currency_symbol}{new_spend:,.0f}")
+        c3.metric(
+            "Incremental Revenue",
+            f"{currency_symbol}{(new - current):,.0f}",
+            delta=f"{((new - current)/current)*100:.1f}%"
+        )
 
-        st.success(f" Incremental Revenue: {currency_symbol}{(new-current):,.0f}")
+        # Smart insight
+        efficiency = (new - current) / (new_spend - spend)
 
-        st.info("Tip: If incremental revenue starts shrinking, you're approaching saturation — scale carefully.")
+        if efficiency < 0.5:
+            st.warning("⚠️ Diminishing returns kicking in — scaling may reduce efficiency.")
+        else:
+            st.success("✅ Still efficient to scale — room to grow.")
 
+        st.info("Tip: Watch how the curve flattens — that's your saturation zone.")
 
 
 
