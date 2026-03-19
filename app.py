@@ -116,8 +116,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Products",
     "Campaigns",
     "Budget Engine",
-    "Meridian Analysis",
-    "Meridian Simulator"
+    "Spend Analysis",
+    "Spend Simulator"
 ])
 # --------------------------------------------------
 # TAB 1 — OVERVIEW (UPGRADED UI)
@@ -146,9 +146,10 @@ with tab1:
     Where should we scale spend, and where should we cut?
 
     This dashboard combines:
+            
     • Performance data (Revenue, Spend, ROAS)  
     • Product & campaign breakdowns  
-    • Simulation modelling (Meridian-style)
+    • Spend simulation (performance + diminishing returns)
 
     👉 Goal: Maximise revenue without increasing budget
     """)
@@ -172,8 +173,8 @@ with tab1:
 
     c3.markdown("""
     **ROAS**  
-    Revenue per R1 spent  
-    *(ROAS 4 = R4 return per R1)*
+    Revenue per 1 spent  
+    *(ROAS 4 = £4 return per £1)*
     """)
 
     st.markdown("---")
@@ -209,7 +210,7 @@ with tab1:
         "Category": ["Source", "Analysis", "Granularity", "Rows"],
         "Details": [
             "Google Ads Data",
-            "Performance + Meridian Simulation",
+            "Performance + Spend Simulator",
             "Product & Campaign",
             f"{len(df):,}"
         ]
@@ -329,22 +330,41 @@ with tab2:
 # --------------------------------------------------
 with tab3:
 
-    st.markdown("## Top Performing Products")
+    st.markdown("## Product Performance")
 
-    # Top products
-    top_products = product_perf.sort_values("Revenue", ascending=False).head(5)
+    # -----------------------------------
+    # DROPDOWN ONLY (NO SEARCH)
+    # -----------------------------------
+    selected_products = st.multiselect(
+        "Select Products",
+        options=sorted(product_perf["product_title"].dropna().unique()),
+        default=[]
+    )
 
-    # Metrics row (quick executive view)
-    total_top_rev = top_products["Revenue"].sum()
-    total_top_conv = top_products["Conversions"].sum()
+    filtered_products = product_perf.copy()
+
+    if selected_products:
+        filtered_products = filtered_products[
+            filtered_products["product_title"].isin(selected_products)
+        ]
+
+    # -----------------------------------
+    # METRICS
+    # -----------------------------------
+    total_rev_products = filtered_products["Revenue"].sum()
+    total_conv_products = filtered_products["Conversions"].sum()
 
     c1, c2 = st.columns(2)
-    c1.metric("Top 5 Combined Revenue", f"{currency_symbol}{total_top_rev:,.0f}")
-    c2.metric("Top 5 Combined Conversions", f"{int(total_top_conv)}")
+    c1.metric("Total Revenue", f"{currency_symbol}{total_rev_products:,.0f}")
+    c2.metric("Total Conversions", f"{int(total_conv_products)}")
 
     st.markdown("---")
 
-    # Bar chart (visual dominance )
+    # -----------------------------------
+    # BAR CHART (TOP 5 ONLY)
+    # -----------------------------------
+    top_products = filtered_products.sort_values("Revenue", ascending=False).head(5)
+
     fig = px.bar(
         top_products,
         x="Revenue",
@@ -360,9 +380,12 @@ with tab3:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # Table (detail view)
-    st.markdown("### Product Breakdown")
-    display_df = top_products.copy()
+    # -----------------------------------
+    # FULL TABLE
+    # -----------------------------------
+    st.markdown("### All Products")
+
+    display_df = filtered_products.copy()
 
     display_df["Spend"] = display_df["Spend"].map(lambda x: f"{currency_symbol}{x:,.0f}")
     display_df["Revenue"] = display_df["Revenue"].map(lambda x: f"{currency_symbol}{x:,.0f}")
@@ -371,18 +394,19 @@ with tab3:
 
     st.dataframe(display_df, use_container_width=True)
 
-# --------------------------------------------------
-# TAB 4 — CAMPAIGNS (CLEAN UI)
+
+#------------------------------------------------------
+# TAB 4 — CAMPAIGN PERFORMANCE
 # --------------------------------------------------
 with tab4:
 
-    st.markdown("## 📊 Top 5 Campaign Performance")
+    st.markdown("## 📊 Campaign Performance")
 
     st.markdown("""
-    Quickly identify where budget is working vs being wasted.
+    Explore campaign performance to identify where budget is driving results.
 
     🟢 High ROAS → scale  
-    🔴 Low ROAS → optimise or cut  
+    🔴 Low ROAS → optimise or reduce spend  
     """)
 
     # -----------------------------------
@@ -397,23 +421,53 @@ with tab4:
         .reset_index()
     )
 
-    campaign_perf["ROAS"] = campaign_perf["Revenue"] / campaign_perf["Spend"]
-
-    # Sort best → worst
-    campaign_perf = campaign_perf.sort_values(by="ROAS", ascending=False)
+    # Safe ROAS
+    campaign_perf["ROAS"] = campaign_perf["Revenue"] / campaign_perf["Spend"].replace(0, np.nan)
+    campaign_perf = campaign_perf.fillna(0)
 
     # -----------------------------------
-    # FORMAT FOR DISPLAY (CLEAN UI)
+    # DROPDOWN ONLY
     # -----------------------------------
-    display_df = campaign_perf.copy()
+    selected_campaigns = st.multiselect(
+        "Filter Campaigns",
+        options=sorted(campaign_perf["campaign"].dropna().unique()),
+        default=[]
+    )
+
+    filtered_campaigns = campaign_perf.copy()
+
+    if selected_campaigns:
+        filtered_campaigns = filtered_campaigns[
+            filtered_campaigns["campaign"].isin(selected_campaigns)
+        ]
+
+    # -----------------------------------
+    # SORT (BEST → WORST)
+    # -----------------------------------
+    filtered_campaigns = filtered_campaigns.sort_values(by="ROAS", ascending=False)
+
+    # -----------------------------------
+    # METRICS
+    # -----------------------------------
+    tab_spend = filtered_campaigns["Spend"].sum()
+    tab_revenue = filtered_campaigns["Revenue"].sum()
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total Spend", f"{currency_symbol}{tab_spend:,.0f}")
+    c2.metric("Total Revenue", f"{currency_symbol}{tab_revenue:,.0f}")
+
+    st.markdown("---")
+
+    # -----------------------------------
+    # FULL TABLE (ALL CAMPAIGNS)
+    # -----------------------------------
+    display_df = filtered_campaigns.copy()
 
     display_df["Spend"] = display_df["Spend"].map(lambda x: f"{currency_symbol}{x:,.0f}")
     display_df["Revenue"] = display_df["Revenue"].map(lambda x: f"{currency_symbol}{x:,.0f}")
     display_df["ROAS"] = display_df["ROAS"].map(lambda x: f"{x:.2f}")
 
-    display_df = display_df.rename(columns={
-        "campaign": "Campaign"
-    })
+    display_df = display_df.rename(columns={"campaign": "Campaign"})
 
     st.markdown("### 📋 Campaign Breakdown")
 
@@ -422,16 +476,6 @@ with tab4:
         use_container_width=True,
         hide_index=True
     )
-
-    # -----------------------------------
-    # SMART INSIGHT
-    # -----------------------------------
-    top_campaign = campaign_perf.iloc[0]
-    worst_campaign = campaign_perf.iloc[-1]
-
-    st.success(f"""
-    🚀 Top Performer: **{top_campaign['campaign']}** (ROAS {top_campaign['ROAS']:.2f})
-    """)
 
 
 # --------------------------------------------------
@@ -474,7 +518,7 @@ with tab5:
     avg_spend = df_budget["Spend"].mean()
 
     # -----------------------------------
-    # DECISION LOGIC (REALISTIC)
+    # DECISION LOGIC
     # -----------------------------------
     def rec(row):
         if row["Conversions"] > avg_conv * 1.3 and row["Spend"] > avg_spend:
@@ -487,7 +531,7 @@ with tab5:
     df_budget["Action"] = df_budget.apply(rec, axis=1)
 
     # -----------------------------------
-    # CONFIDENCE (DATA QUALITY)
+    # CONFIDENCE
     # -----------------------------------
     def confidence(row):
         if row["Conversions"] > 20:
@@ -500,14 +544,26 @@ with tab5:
     df_budget["Confidence"] = df_budget.apply(confidence, axis=1)
 
     # -----------------------------------
-    # SORT BY BUSINESS IMPACT
+    # SEARCH (NEW 🔍)
     # -----------------------------------
-    df_budget = df_budget.sort_values(by="Revenue", ascending=False)
+    search_budget = st.text_input("🔍 Search product (filter recommendations)")
+
+    filtered_budget = df_budget.copy()
+
+    if search_budget:
+        filtered_budget = filtered_budget[
+            filtered_budget["product_title"].str.contains(search_budget, case=False, na=False)
+        ]
 
     # -----------------------------------
-    # DISPLAY
+    # SORT
     # -----------------------------------
-    display_df = df_budget.copy()
+    filtered_budget = filtered_budget.sort_values(by="Revenue", ascending=False)
+
+    # -----------------------------------
+    # DISPLAY FORMAT
+    # -----------------------------------
+    display_df = filtered_budget.copy()
 
     display_df["Spend"] = display_df["Spend"].map(lambda x: f"£{int(x):,}")
     display_df["Revenue"] = display_df["Revenue"].map(lambda x: f"£{int(x):,}")
@@ -550,10 +606,10 @@ with tab5:
     )
 
     # -----------------------------------
-    # SUMMARY
+    # SUMMARY (BASED ON FILTERED DATA ✅)
     # -----------------------------------
-    scale = (df_budget["Action"] == "🟢 Scale").sum()
-    cut = (df_budget["Action"] == "🔴 Cut").sum()
+    scale = (filtered_budget["Action"] == "🟢 Scale").sum()
+    cut = (filtered_budget["Action"] == "🔴 Cut").sum()
 
     st.success(f"""
     🚀 {scale} products to SCALE  
@@ -562,12 +618,13 @@ with tab5:
     👉 Back products with real volume, not inflated ROAS.
     """)
 
+
 # --------------------------------------------------
 # TAB 6 — MERIDIAN ANALYSIS
 # --------------------------------------------------
 with tab6:
 
-    st.markdown("##  Meridian Analysis (Diminishing Returns)")
+    st.markdown("##  Spend Simulator (Diminishing Returns)")
 
     st.markdown("""
     This chart simulates how revenue grows as you increase spend on selected campaigns.

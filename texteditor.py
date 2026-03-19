@@ -1,4 +1,825 @@
-from pyngrok import ngrok
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
 
-public_url = ngrok.connect(8501)
-print(public_url)
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
+st.set_page_config(page_title="Rapha Ads Intelligence", layout="wide")
+
+# --------------------------------------------------
+# LOGO + HEADER (ADD THIS HERE)
+# --------------------------------------------------
+col1, col2 = st.columns([1, 6])
+
+with col1:
+    st.image("Logo.png", width=110)   # or "Logo.png"
+
+with col2:
+    st.markdown("## Rapha Ads Intelligence")
+
+# --------------------------------------------------
+# STYLING
+# --------------------------------------------------
+st.markdown("""
+<style>
+.exec-card {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 12px;
+    border: 1px solid #e2e8f0;
+}
+.section-title {
+    font-size: 18px;
+    font-weight: 600;
+}
+.muted {
+    color: #64748b;
+}
+.highlight {
+    background: #013a7a;
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("Rapha | Google Ads Product Intelligence Dashboard")
+
+# --------------------------------------------------
+# LOAD DATA
+# --------------------------------------------------
+@st.cache_data
+def load_data():
+    df = pd.read_csv("rapha_campaign_clean.csv")
+
+    num_cols = ["cost","clicks","impr","conversions","conv_value"]
+    for col in num_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    currency = df["currency_code"].iloc[0] if "currency_code" in df.columns else "GBP"
+    symbol_map = {"GBP": "£", "EUR": "€", "USD": "$"}
+    currency_symbol = symbol_map.get(currency, "£")
+
+    return df, currency_symbol
+
+df, currency_symbol = load_data()
+
+# --------------------------------------------------
+# SIDEBAR
+# --------------------------------------------------
+campaign_filter = st.sidebar.multiselect(
+    "Select Campaigns",
+    options=sorted(df["campaign"].dropna().unique()),
+    default=list(df["campaign"].dropna().unique())
+)
+
+filtered = df[df["campaign"].isin(campaign_filter)]
+
+if filtered.empty:
+    st.warning("No data selected")
+    st.stop()
+
+# --------------------------------------------------
+# PRODUCT PERF
+# --------------------------------------------------
+product_perf = (
+    filtered.groupby("product_title")
+    .agg(
+        Spend=("cost","sum"),
+        Revenue=("conv_value","sum"),
+        Conversions=("conversions","sum")
+    )
+    .reset_index()
+)
+
+product_perf["ROAS"] = product_perf["Revenue"] / product_perf["Spend"].replace(0, np.nan)
+product_perf = product_perf.fillna(0)
+
+# --------------------------------------------------
+# GLOBAL METRICS
+# --------------------------------------------------
+total_spend = filtered["cost"].sum()
+total_rev = filtered["conv_value"].sum()
+total_conv = filtered["conversions"].sum()
+roas = total_rev / total_spend if total_spend else 0
+
+# --------------------------------------------------
+# TABS
+# --------------------------------------------------
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "Overview",
+    "Performance Snapshot",
+    "Products",
+    "Campaigns",
+    "Budget Engine",
+    "Spend Analysis",
+    "Spend Simulator"
+])
+# --------------------------------------------------
+# TAB 1 — OVERVIEW (UPGRADED UI)
+# --------------------------------------------------
+with tab1:
+
+    st.markdown("## 🧠 Executive Overview")
+
+    # -----------------------------------
+    # KPI ROW (CLEAN + VISUAL)
+    # -----------------------------------
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("💰 Revenue", f"{currency_symbol}{total_rev:,.0f}")
+    c2.metric("💸 Spend", f"{currency_symbol}{total_spend:,.0f}")
+    c3.metric("📈 ROAS", f"{roas:.2f}")
+
+    st.markdown("---")
+
+    # -----------------------------------
+    # WHAT THIS DASHBOARD DOES (SIMPLER)
+    # -----------------------------------
+    st.markdown("### 🎯 What this dashboard answers")
+
+    st.info(f"""
+    Where should we scale spend, and where should we cut?
+
+    This dashboard combines:
+            
+    • Performance data (Revenue, Spend, ROAS)  
+    • Product & campaign breakdowns  
+    • Spend simulation (performance + diminishing returns)
+
+    👉 Goal: Maximise revenue without increasing budget
+    """)
+
+    # -----------------------------------
+    # KPI EXPLANATION (CLEANER)
+    # -----------------------------------
+    st.markdown("### 📘 Understanding the numbers")
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.markdown("""
+    **Revenue**  
+    Total value generated from ads
+    """)
+
+    c2.markdown("""
+    **Spend**  
+    Total advertising cost
+    """)
+
+    c3.markdown("""
+    **ROAS**  
+    Revenue per 1 spent  
+    *(ROAS 4 = £4 return per £1)*
+    """)
+
+    st.markdown("---")
+
+    # -----------------------------------
+    # KEY INSIGHT (MORE PUNCHY)
+    # -----------------------------------
+    performance_label = (
+        "🟢 Strong" if roas >= 3 else
+        "🟡 Moderate" if roas >= 2 else
+        "🔴 Underperforming"
+    )
+
+    st.markdown("### 🚨 Key Insight")
+
+    st.success(f"""
+    Performance: **{performance_label} (ROAS {roas:.2f})**
+
+    • Revenue is driven by a small group of high-performing products  
+    • Some budget is being wasted on low-efficiency campaigns  
+
+    👉 **Action:** Shift spend from weak performers → top performers to unlock more revenue
+    """)
+
+    st.markdown("---")
+
+    # -----------------------------------
+    # DATA OVERVIEW (CLEAN TABLE)
+    # -----------------------------------
+    st.markdown("### 🗂️ Data Overview")
+
+    st.dataframe(pd.DataFrame({
+        "Category": ["Source", "Analysis", "Granularity", "Rows"],
+        "Details": [
+            "Google Ads Data",
+            "Performance + Spend Simulator",
+            "Product & Campaign",
+            f"{len(df):,}"
+        ]
+    }), use_container_width=True)
+
+
+# --------------------------------------------------
+# TAB 2 — SNAPSHOT
+# --------------------------------------------------
+with tab2:
+
+    st.markdown("## Overall Performance Snapshot")
+
+    # -----------------------------------
+    # KPI STRIP (WITH CONTEXT)
+    # -----------------------------------
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Spend", f"{currency_symbol}{total_spend:,.0f}")
+    c2.metric("Revenue", f"{currency_symbol}{total_rev:,.0f}")
+    c3.metric("Conversions", f"{total_conv}")
+    c4.metric("ROAS", f"{roas:.2f}")
+
+    st.markdown("")
+
+    # -----------------------------------
+    # WHAT THIS VIEW SHOWS (NON-TECHNICAL)
+    # -----------------------------------
+    st.markdown("""
+    <div class="exec-card">
+
+    <div class="section-title">How to read this</div>
+
+    <div class="muted">
+    Each dot represents a <b>product</b>.<br><br>
+
+    <b>X-axis (Spend)</b> → how much budget was invested<br>
+    <b>Y-axis (Revenue)</b> → how much value that product generated<br><br>
+
+    Top-left = inefficient (high spend, low return) ❌<br>
+    Bottom-right = high potential (low spend, strong return) 💡<br>
+    Top-right = strong performers (scale candidates) 🚀
+    </div>
+
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("")
+
+    # -----------------------------------
+    # DATA PREP
+    # -----------------------------------
+    scatter_df = (
+        filtered.groupby("product_title")
+        .agg(Spend=("cost","sum"), Revenue=("conv_value","sum"))
+        .reset_index()
+    )
+
+    # -----------------------------------
+    # SCATTER (UPGRADED VISUAL)
+    # -----------------------------------
+    fig = px.scatter(
+        scatter_df,
+        x="Spend",
+        y="Revenue",
+        hover_name="product_title",
+        size="Revenue",  # adds visual importance
+        size_max=25
+    )
+
+    # Clean styling (important)
+    fig.update_traces(
+        marker=dict(opacity=0.7),
+    )
+
+    fig.update_layout(
+        height=500,
+        margin=dict(l=10, r=10, t=30, b=10),
+        xaxis_title="Spend",
+        yaxis_title="Revenue",
+    )
+
+    # Optional: add reference line (very powerful visual cue)
+    fig.add_shape(
+        type="line",
+        x0=scatter_df["Spend"].min(),
+        y0=scatter_df["Spend"].min() * roas,
+        x1=scatter_df["Spend"].max(),
+        y1=scatter_df["Spend"].max() * roas,
+        line=dict(dash="dot")
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # -----------------------------------
+    # EXECUTIVE TAKEAWAY (DYNAMIC)
+    # -----------------------------------
+    st.markdown(f"""
+    <div class="exec-card">
+
+    <div class="section-title">What this means</div>
+
+    <div class="muted">
+    Overall efficiency is <b>{"high" if roas >= 3 else "moderate" if roas >= 2 else "low"}</b> 
+    with a ROAS of <b>{roas:.2f}</b>.<br><br>
+
+    The distribution shows that performance is not evenly spread — 
+    a small number of products are driving the majority of revenue.<br><br>
+
+    <b>Action:</b> Focus on scaling products in the upper-right quadrant 
+    while reviewing or reducing spend on underperforming ones.
+    </div>
+
+    </div>
+    """, unsafe_allow_html=True)
+# --------------------------------------------------
+# TAB 3 — PRODUCT PERFORMANCE
+# --------------------------------------------------
+with tab3:
+
+    st.markdown("## Product Performance")
+
+    # -----------------------------------
+    # DROPDOWN ONLY (NO SEARCH)
+    # -----------------------------------
+    selected_products = st.multiselect(
+        "Select Products",
+        options=sorted(product_perf["product_title"].dropna().unique()),
+        default=[]
+    )
+
+    filtered_products = product_perf.copy()
+
+    if selected_products:
+        filtered_products = filtered_products[
+            filtered_products["product_title"].isin(selected_products)
+        ]
+
+    # -----------------------------------
+    # METRICS
+    # -----------------------------------
+    total_rev_products = filtered_products["Revenue"].sum()
+    total_conv_products = filtered_products["Conversions"].sum()
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total Revenue", f"{currency_symbol}{total_rev_products:,.0f}")
+    c2.metric("Total Conversions", f"{int(total_conv_products)}")
+
+    st.markdown("---")
+
+    # -----------------------------------
+    # BAR CHART (TOP 5 ONLY)
+    # -----------------------------------
+    top_products = filtered_products.sort_values("Revenue", ascending=False).head(5)
+
+    fig = px.bar(
+        top_products,
+        x="Revenue",
+        y="product_title",
+        orientation="h",
+        text="Revenue"
+    )
+
+    fig.update_layout(
+        yaxis=dict(categoryorder="total ascending"),
+        height=400
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # -----------------------------------
+    # FULL TABLE
+    # -----------------------------------
+    st.markdown("### All Products")
+
+    display_df = filtered_products.copy()
+
+    display_df["Spend"] = display_df["Spend"].map(lambda x: f"{currency_symbol}{x:,.0f}")
+    display_df["Revenue"] = display_df["Revenue"].map(lambda x: f"{currency_symbol}{x:,.0f}")
+    display_df["Conversions"] = display_df["Conversions"].map(lambda x: f"{int(x)}")
+    display_df["ROAS"] = display_df["ROAS"].map(lambda x: f"{x:.1f}")
+
+    st.dataframe(display_df, use_container_width=True)
+
+# --------------------------------------------------
+# TAB 4 — CAMPAIGN PERFORMANCE
+# --------------------------------------------------
+with tab4:
+
+    st.markdown("## 📊 Campaign Performance")
+
+    st.markdown("""
+    Explore campaign performance to identify where budget is driving results.
+
+    🟢 High ROAS → scale  
+    🔴 Low ROAS → optimise or reduce spend  
+    """)
+
+    # -----------------------------------
+    # DATA PREP
+    # -----------------------------------
+    campaign_perf = (
+        filtered.groupby("campaign")
+        .agg(
+            Spend=("cost", "sum"),
+            Revenue=("conv_value", "sum")
+        )
+        .reset_index()
+    )
+
+    # Safe ROAS
+    campaign_perf["ROAS"] = campaign_perf["Revenue"] / campaign_perf["Spend"].replace(0, np.nan)
+    campaign_perf = campaign_perf.fillna(0)
+
+    # -----------------------------------
+    # DROPDOWN ONLY
+    # -----------------------------------
+    selected_campaigns = st.multiselect(
+        "Filter Campaigns",
+        options=sorted(campaign_perf["campaign"].dropna().unique()),
+        default=[]
+    )
+
+    filtered_campaigns = campaign_perf.copy()
+
+    if selected_campaigns:
+        filtered_campaigns = filtered_campaigns[
+            filtered_campaigns["campaign"].isin(selected_campaigns)
+        ]
+
+    # -----------------------------------
+    # SORT (BEST → WORST)
+    # -----------------------------------
+    filtered_campaigns = filtered_campaigns.sort_values(by="ROAS", ascending=False)
+
+    # -----------------------------------
+    # METRICS
+    # -----------------------------------
+    tab_spend = filtered_campaigns["Spend"].sum()
+    tab_revenue = filtered_campaigns["Revenue"].sum()
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total Spend", f"{currency_symbol}{tab_spend:,.0f}")
+    c2.metric("Total Revenue", f"{currency_symbol}{tab_revenue:,.0f}")
+
+    st.markdown("---")
+
+    # -----------------------------------
+    # FULL TABLE (ALL CAMPAIGNS)
+    # -----------------------------------
+    display_df = filtered_campaigns.copy()
+
+    display_df["Spend"] = display_df["Spend"].map(lambda x: f"{currency_symbol}{x:,.0f}")
+    display_df["Revenue"] = display_df["Revenue"].map(lambda x: f"{currency_symbol}{x:,.0f}")
+    display_df["ROAS"] = display_df["ROAS"].map(lambda x: f"{x:.2f}")
+
+    display_df = display_df.rename(columns={"campaign": "Campaign"})
+
+    st.markdown("### 📋 Campaign Breakdown")
+
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+
+
+
+
+
+# --------------------------------------------------
+# TAB 5 — BUDGET ENGINE (CONVERSION-DRIVEN)
+# --------------------------------------------------
+with tab5:
+
+    st.markdown("## 💡 Budget Recommendations")
+
+    st.markdown("""
+    Budget decisions based on **real volume + business impact**.
+
+    🟢 Scale → strong sales & meaningful spend  
+    🟡 Hold → average  
+    🔴 Cut → low impact  
+    """)
+
+    # -----------------------------------
+    # AGGREGATION
+    # -----------------------------------
+    df_budget = (
+        product_perf
+        .groupby("product_title", as_index=False)
+        .agg({
+            "Spend": "sum",
+            "Revenue": "sum",
+            "Conversions": "sum"
+        })
+    )
+
+    # -----------------------------------
+    # CLEAN TYPES
+    # -----------------------------------
+    df_budget["Conversions"] = df_budget["Conversions"].astype(float)
+
+    # -----------------------------------
+    # ACCOUNT BASELINES
+    # -----------------------------------
+    avg_conv = df_budget["Conversions"].mean()
+    avg_spend = df_budget["Spend"].mean()
+
+    # -----------------------------------
+    # DECISION LOGIC
+    # -----------------------------------
+    def rec(row):
+        if row["Conversions"] > avg_conv * 1.3 and row["Spend"] > avg_spend:
+            return "🟢 Scale"
+        elif row["Conversions"] < avg_conv * 0.7:
+            return "🔴 Cut"
+        else:
+            return "🟡 Hold"
+
+    df_budget["Action"] = df_budget.apply(rec, axis=1)
+
+    # -----------------------------------
+    # CONFIDENCE
+    # -----------------------------------
+    def confidence(row):
+        if row["Conversions"] > 20:
+            return "High"
+        elif row["Conversions"] > 5:
+            return "Medium"
+        else:
+            return "Low"
+
+    df_budget["Confidence"] = df_budget.apply(confidence, axis=1)
+
+    # -----------------------------------
+    # SEARCH (NEW 🔍)
+    # -----------------------------------
+    search_budget = st.text_input("🔍 Search product (filter recommendations)")
+
+    filtered_budget = df_budget.copy()
+
+    if search_budget:
+        filtered_budget = filtered_budget[
+            filtered_budget["product_title"].str.contains(search_budget, case=False, na=False)
+        ]
+
+    # -----------------------------------
+    # SORT
+    # -----------------------------------
+    filtered_budget = filtered_budget.sort_values(by="Revenue", ascending=False)
+
+    # -----------------------------------
+    # DISPLAY FORMAT
+    # -----------------------------------
+    display_df = filtered_budget.copy()
+
+    display_df["Spend"] = display_df["Spend"].map(lambda x: f"£{int(x):,}")
+    display_df["Revenue"] = display_df["Revenue"].map(lambda x: f"£{int(x):,}")
+    display_df["Conversions"] = display_df["Conversions"].map(lambda x: f"{int(x)}")
+
+    display_df = display_df.rename(columns={
+        "product_title": "Product"
+    })
+
+    # -----------------------------------
+    # GUIDE
+    # -----------------------------------
+    with st.expander("🧠 How this works"):
+        st.markdown("""
+        We prioritise **real sales volume**, not inflated efficiency.
+
+        - High conversions = reliable demand  
+        - Spend ensures results are scalable  
+        - Revenue shows business impact  
+
+        👉 High ROAS with low spend is ignored (not scalable).
+        """)
+
+    # -----------------------------------
+    # TABLE
+    # -----------------------------------
+    st.markdown("### 📊 Where Budget Should Go")
+
+    st.dataframe(
+        display_df[[
+            "Product",
+            "Spend",
+            "Revenue",
+            "Conversions",
+            "Confidence",
+            "Action"
+        ]],
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # -----------------------------------
+    # SUMMARY (BASED ON FILTERED DATA ✅)
+    # -----------------------------------
+    scale = (filtered_budget["Action"] == "🟢 Scale").sum()
+    cut = (filtered_budget["Action"] == "🔴 Cut").sum()
+
+    st.success(f"""
+    🚀 {scale} products to SCALE  
+    🔻 {cut} products to CUT  
+
+    👉 Back products with real volume, not inflated ROAS.
+    """)
+
+
+# --------------------------------------------------
+# TAB 6 — MERIDIAN ANALYSIS
+# --------------------------------------------------
+with tab6:
+
+    st.markdown("##  Spend Simulator (Diminishing Returns)")
+
+    st.markdown("""
+    This chart simulates how revenue grows as you increase spend on selected campaigns.
+
+    ###  What you're looking at:
+    - Each line = a selected campaign  
+    - X-axis = Spend (budget invested)  
+    - Y-axis = Revenue generated  
+
+    ###  How to use:
+    - Select up to **2 campaigns** to compare  
+    - Compare curve steepness → shows scaling potential  
+    """)
+
+    #  NEW: campaign selector (max 2)
+    selected_campaigns = st.multiselect(
+        "Select up to 2 campaigns to compare",
+        options=filtered["campaign"].unique(),
+        default=list(filtered["campaign"].unique())[:2]
+    )
+
+    if len(selected_campaigns) == 0:
+        st.warning("Please select at least one campaign.")
+    elif len(selected_campaigns) > 2:
+        st.warning("Select maximum 2 campaigns for a clean comparison.")
+    else:
+
+        channel_df = (
+            filtered[filtered["campaign"].isin(selected_campaigns)]
+            .groupby("campaign")
+            .agg(Spend=("cost","sum"), Revenue=("conv_value","sum"))
+            .reset_index()
+        )
+
+        curves = []
+
+        for _, row in channel_df.iterrows():
+
+            spend = max(row["Spend"],1)
+            revenue = max(row["Revenue"],1)
+
+            x = np.linspace(0, spend*2,100)
+            y = revenue*(1-np.exp(-x/spend))
+
+            curves.append(pd.DataFrame({
+                "Spend":x,
+                "Revenue":y,
+                "Channel":row["campaign"]
+            }))
+
+        curve_df = pd.concat(curves)
+
+        fig = px.line(curve_df, x="Spend", y="Revenue", color="Channel")
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.info("Tip: The steeper curve indicates better scaling potential before diminishing returns kick in.")
+
+# --------------------------------------------------
+# TAB 7 — MERIDIAN SIMULATOR (UPGRADED)
+# --------------------------------------------------
+with tab7:
+
+    st.markdown("## 🚀 Spend Simulator (What Happens If You Scale?)")
+
+    st.markdown("""
+    This tool simulates increasing budget and estimates **revenue impact using diminishing returns**.
+
+    ### 🧠 Key Insight:
+    Scaling is highly dependent on data source .  
+    At higher spend levels, each extra rand works *harder* for less return.
+    """)
+
+    campaign = st.selectbox("Select Campaign", filtered["campaign"].unique())
+
+    data = filtered[filtered["campaign"] == campaign]
+
+    spend = data["cost"].sum()
+    revenue = data["conv_value"].sum()
+
+    if spend == 0:
+        st.warning("No data available for this campaign.")
+    else:
+
+        st.markdown("### ⚙️ Adjust Budget Scenario")
+
+        pct = st.slider("Increase Spend (%)", 0, 100, 20)
+
+        new_spend = spend * (1 + pct / 100)
+
+        # -------------------------------
+        # DIMINISHING RETURNS CURVE
+        # -------------------------------
+        def curve(x):
+            return revenue * (1 - np.exp(-x / spend))
+
+        current = curve(spend)
+        new = curve(new_spend)
+
+        x = np.linspace(0, spend * 2.2, 200)  # smoother curve
+        y = curve(x)
+
+        # -------------------------------
+        # PLOT
+        # -------------------------------
+        fig = px.line(
+            x=x,
+            y=y,
+            labels={"x": "Spend", "y": "Predicted Revenue"},
+        )
+
+        # Curve styling
+        fig.update_traces(
+            line=dict(width=4),
+        )
+
+        # CURRENT POINT (bigger + styled)
+        fig.add_scatter(
+            x=[spend],
+            y=[current],
+            mode="markers+text",
+            name="Current",
+            text=["Current"],
+            textposition="top center",
+            marker=dict(
+                size=16,
+                symbol="circle",
+                line=dict(width=2)
+            ),
+        )
+
+        # NEW POINT (bigger + highlighted)
+        fig.add_scatter(
+            x=[new_spend],
+            y=[new],
+            mode="markers+text",
+            name="Scenario",
+            text=["New"],
+            textposition="top center",
+            marker=dict(
+                size=20,
+                symbol="circle",
+                line=dict(width=2)
+            ),
+        )
+
+        # -------------------------------
+        # BEAUTIFICATION
+        # -------------------------------
+        fig.update_layout(
+            height=500,
+            margin=dict(l=10, r=10, t=40, b=10),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+        )
+
+        # Optional subtle grid polish
+        fig.update_xaxes(showgrid=True, gridwidth=0.5)
+        fig.update_yaxes(showgrid=True, gridwidth=0.5)
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # -------------------------------
+        # IMPACT SUMMARY
+        # -------------------------------
+        st.markdown("### 📊 Impact Summary")
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric("Current Spend", f"{currency_symbol}{spend:,.0f}")
+        c2.metric("New Spend", f"{currency_symbol}{new_spend:,.0f}")
+        c3.metric(
+            "Incremental Revenue",
+            f"{currency_symbol}{(new - current):,.0f}",
+            delta=f"{((new - current)/current)*100:.1f}%"
+        )
+
+        # Smart insight
+        efficiency = (new - current) / (new_spend - spend)
+
+        if efficiency < 0.5:
+            st.warning("⚠️ Diminishing returns kicking in — scaling may reduce efficiency.")
+        else:
+            st.success("✅ Still efficient to scale — room to grow.")
+
+        st.info("Tip: Watch how the curve flattens — that's your saturation zone.")
+
+
+
+      
