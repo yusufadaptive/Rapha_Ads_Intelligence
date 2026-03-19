@@ -544,19 +544,24 @@ with tab5:
     df_budget["Confidence"] = df_budget.apply(confidence, axis=1)
 
     # -----------------------------------
-    # SEARCH (NEW 🔍)
+    # DROPDOWN FILTER (FIXED ✅)
     # -----------------------------------
-    search_budget = st.text_input("🔍 Search product (filter recommendations)")
+    product_options = sorted(df_budget["product_title"].dropna().unique())
+
+    selected_products = st.multiselect(
+        "Select product (filter recommendations)",
+        options=product_options
+    )
 
     filtered_budget = df_budget.copy()
 
-    if search_budget:
+    if selected_products:
         filtered_budget = filtered_budget[
-            filtered_budget["product_title"].str.contains(search_budget, case=False, na=False)
+            filtered_budget["product_title"].isin(selected_products)
         ]
 
     # -----------------------------------
-    # SORT
+    # SORT (ALWAYS RUN ✅)
     # -----------------------------------
     filtered_budget = filtered_budget.sort_values(by="Revenue", ascending=False)
 
@@ -588,7 +593,7 @@ with tab5:
         """)
 
     # -----------------------------------
-    # TABLE
+    # TABLE (ALWAYS SHOW ✅)
     # -----------------------------------
     st.markdown("### 📊 Where Budget Should Go")
 
@@ -606,7 +611,7 @@ with tab5:
     )
 
     # -----------------------------------
-    # SUMMARY (BASED ON FILTERED DATA ✅)
+    # SUMMARY
     # -----------------------------------
     scale = (filtered_budget["Action"] == "🟢 Scale").sum()
     cut = (filtered_budget["Action"] == "🔴 Cut").sum()
@@ -617,7 +622,6 @@ with tab5:
 
     👉 Back products with real volume, not inflated ROAS.
     """)
-
 
 # --------------------------------------------------
 # TAB 6 — MERIDIAN ANALYSIS
